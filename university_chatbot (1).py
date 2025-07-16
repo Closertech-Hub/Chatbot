@@ -15,7 +15,7 @@ try:
         qa_dataset = json.load(f)['questions']
 except FileNotFoundError:
     st.error("Knowledge base file not found. Please ensure 'qa_dataset.json' is in the same directory.")
-    knowledge_base = []
+    qa_dataset = []
 
 # Initialize sentence transformer for semantic similarity
 model = SentenceTransformer('distilbert-base-uncased')
