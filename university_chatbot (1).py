@@ -12,7 +12,7 @@ logging.basicConfig(filename='chatbot.log', level=logging.INFO, format='%(asctim
 # Load knowledge base (replace with your JSON file path)
 try:
     with open('qa_dataset.json', 'r') as f:
-        knowledge_base = json.load(f)['questions']
+        qa_dataset = json.load(f)['questions']
 except FileNotFoundError:
     st.error("Knowledge base file not found. Please ensure 'qa_dataset.json' is in the same directory.")
     knowledge_base = []
