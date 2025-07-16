@@ -1,84 +1,96 @@
 import streamlit as st
-import nltk
 import json
-from nltk.tokenize import word_tokenize
-from nltk.corpus import stopwords
-from nltk.stem import WordNetLemmatizer
-import string
 import logging
+import random
+from transformers import pipeline
+from sentence_transformers import SentenceTransformer, util
+import torch
 
 # Set up logging
 logging.basicConfig(filename='chatbot.log', level=logging.INFO, format='%(asctime)s - %(message)s')
 
-# Download NLTK resources (run once)
-nltk.download('punkt')
-nltk.download('stopwords')
-nltk.download('wordnet')
+# Load knowledge base (replace with your JSON file path)
+try:
+    with open('qa_dataset.json', 'r') as f:
+        knowledge_base = json.load(f)['questions']
+except FileNotFoundError:
+    st.error("Knowledge base file not found. Please ensure 'qa_dataset.json' is in the same directory.")
+    knowledge_base = []
 
-# Initialize lemmatizer and stopwords
-lemmatizer = WordNetLemmatizer()
-stop_words = set(stopwords.words('english'))
+# Initialize sentence transformer for semantic similarity
+model = SentenceTransformer('distilbert-base-uncased')
 
-# Sample knowledge base (replace with university-specific FAQs)
-knowledge_base = {
-    "admission requirements": "To apply, you need a high school diploma, SAT/ACT scores, and a completed application form. Check the university website for specific GPA requirements.",
-    "registration deadline": "The registration deadline for the upcoming semester is August 15, 2025. Late registration may incur a fee.",
-    "financial aid": "Financial aid applications are due by June 30, 2025. Visit the financial aid office or website for forms and eligibility details.",
-    "campus tour": "Campus tours are available weekly. Register online at the university's admissions page.",
-    "contact support": "Contact the student support office at support@university.edu or call (123) 456-7890."
-}
+# Precompute embeddings for knowledge base questions
+question_texts = [item['question'].lower() for item in knowledge_base]
+question_embeddings = model.encode(question_texts, convert_to_tensor=True)
 
-# Preprocess user input
-def preprocess_text(text):
-    tokens = word_tokenize(text.lower())
-    tokens = [token for token in tokens if token not in string.punctuation]
-    tokens = [token for token in tokens if token not in stop_words]
-    tokens = [lemmatizer.lemmatize(token) for token in tokens]
-    return tokens
+# Fallback responses for unrecognized queries
+fallback_responses = [
+    "I'm not sure I caught that! Could you rephrase or ask something else?",
+    "Oops, I didn't get that one. Try asking in a different way or check out support@university.edu!",
+    "Hmm, that's a new one for me! Can you clarify or ask about something else, like admissions or campus tours?"
+]
 
-# Match user query to knowledge base
+# Greetings for conversation start
+greetings = ["Hi there! I'm your friendly university assistant, ready to help! What's on your mind?",
+             "Hello! Excited to assist you with university questions. What's up?",
+             "Hey! I'm here to answer your questions about our university. What's first?"]
+
+# Follow-up prompts
+follow_ups = ["Anything else I can help with?", "Got more questions? I'm all ears!", "What's next on your list?"]
+
+# Process user input and find best match
 def get_response(user_input):
-    processed_input = preprocess_text(user_input)
-    best_match = None
-    max_score = 0
+    user_input = user_input.lower().strip()
+    logging.info(f"User query: {user_input}")
 
-    for question, answer in knowledge_base.items():
-        processed_question = preprocess_text(question)
-        score = len(set(processed_input) & set(processed_question))
-        if score > max_score:
-            max_score = score
-            best_match = answer
+    # Encode user input
+    user_embedding = model.encode(user_input, convert_to_tensor=True)
 
-    if max_score > 0:
-        logging.info(f"Query: {user_input}, Response: {best_match}")
-        return best_match
+    # Compute cosine similarities
+    cos_scores = util.cos_sim(user_embedding, question_embeddings)[0]
+    best_score = cos_scores.max().item()
+    best_idx = cos_scores.argmax().item()
+
+    # Threshold for matching (adjust as needed)
+    if best_score > 0.7:  # Higher score means better match
+        response = knowledge_base[best_idx]['answer']
+        logging.info(f"Matched query: {knowledge_base[best_idx]['question']}, Response: {response}")
+        return response, random.choice(follow_ups)
     else:
-        logging.info(f"Query: {user_input}, Response: Fallback")
-        return "Sorry, I don't understand your question. Please try rephrasing or contact support@university.edu."
+        logging.info("No match found, using fallback")
+        return random.choice(fallback_responses), random.choice(follow_ups)
 
 # Streamlit app
 def main():
     st.title("University Chatbot")
-    st.write("Ask about admissions, registration, financial aid, or campus tours!")
+    st.write("I'm here to help with questions about admissions, registration, and more! Ask away!")
 
-    # Initialize session state for chat history
+    # Initialize session state
     if 'chat_history' not in st.session_state:
-        st.session_state.chat_history = []
+        st.session_state.chat_history = [(None, random.choice(greetings))]
+    if 'first_interaction' not in st.session_state:
+        st.session_state.first_interaction = True
 
     # User input
     user_input = st.text_input("Your question:", key="user_input")
 
     if user_input:
-        response = get_response(user_input)
+        # Get response and follow-up
+        response, follow_up = get_response(user_input)
         st.session_state.chat_history.append(("You", user_input))
         st.session_state.chat_history.append(("Bot", response))
+        st.session_state.chat_history.append(("Bot", follow_up))
+        st.session_state.first_interaction = False
 
     # Display chat history
     for speaker, message in st.session_state.chat_history:
         if speaker == "You":
-            st.write(f"**You**: {message}")
+            st.markdown(f"**You**: {message}")
+        elif speaker == "Bot":
+            st.markdown(f"**Bot**: {message}")
         else:
-            st.write(f"**Bot**: {message}")
+            st.markdown(f"{message}")
 
 if __name__ == "__main__":
     main()
