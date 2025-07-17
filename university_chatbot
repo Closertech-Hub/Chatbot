@@ -22,7 +22,7 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 # Load SentenceTransformer model
 embed_model = SentenceTransformer("all-MiniLM-L6-v2")
 
-# Load knowledge base (fixed for correct structure)
+# Load knowledge base
 with open("qa_dataset.json", "r", encoding="utf-8") as f:
     qa_data = json.load(f)
 
@@ -121,7 +121,7 @@ You are CrescentBot, a friendly and helpful assistant for a university. Be conve
 User: {user_input}
 Assistant:
 """
-    response = openai.chat.completions.create(
+    response = openai.ChatCompletion.create(
         model="gpt-4",
         messages=[
             {"role": "system", "content": "You are a helpful university assistant."},
